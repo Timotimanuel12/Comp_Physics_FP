@@ -41,6 +41,16 @@ def main():
             if event.type == pygame.QUIT:
                 run = False
 
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 4:  # Scroll UP -> Zoom In
+                    Planet.SCALE *= 1.1
+                    for planet in planets:
+                        planet.radius *= 1.1
+                if event.button == 5:  # Scroll DOWN -> Zoom Out
+                    Planet.SCALE /= 1.1
+                    for planet in planets:
+                        planet.radius /= 1.1
+
         for planet in planets:
             planet.update_position(planets)
             planet.draw(WIN)
