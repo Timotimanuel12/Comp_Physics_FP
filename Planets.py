@@ -11,7 +11,7 @@ HEIGHT = 1300
 class Planet:
     AU = 149597870700 #Astronomical unit in meters
     G = 6.6743 * 10e-11 #Gravitational constant in m^3 kg^-1 s^-2
-    SCALE = 100 / AU # 1 AU = 250 pixels
+    SCALE = 250 / AU # 1 AU = 250 pixels
     TIME = 3600 * 24 #1 day rotation
 
     def __init__(self, x, y, radius, mass, color): #initialize class
