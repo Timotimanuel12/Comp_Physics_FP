@@ -31,7 +31,19 @@ def main():
     mars = Planet(1.50 * Planet.AU, 0, 12, 6.4169 * (10 ** 23), (198, 123, 92))
     mars.y_velocity = 24.077 * 1000
 
-    planets = [sun, earth, venus, mercury, mars]
+    #Jupiter
+    jupiter = Planet(5.20 * Planet.AU, 0, 23, 1.8981 * (10**27), (209, 167, 127))
+    jupiter.y_velocity = 1.3056 * (10**4)
+
+    #Saturn
+    saturn = Planet(9.50 * Planet.AU, 0, 20, 5.6832 * (10**26), (237, 219, 173))
+    saturn.y_velocity = 9.6391 * (10**3)
+
+    #Neptune
+    neptune = Planet(30.06 * Planet.AU, 0, 19, 1.0241 * (10**26), (124, 183, 187))
+    neptune.y_velocity = 5.4349 * (10**3)
+
+    planets = [sun, earth, venus, mercury, mars, jupiter, neptune, saturn]
 
     while run:
         clock.tick(60)
