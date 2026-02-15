@@ -16,7 +16,7 @@ def main():
     sun.sun = True
 
     # Earth Radius 15
-    earth = Planet(-1 * Planet.AU, 0, 16, 5.9722 * (10 ** 24), (0, 0, 255))
+    earth = Planet(1 * Planet.AU, 0, 16, 5.9722 * (10 ** 24), (0, 0, 255))
     earth.y_velocity = 29.783 * 1000
 
     # Venus Radius 12

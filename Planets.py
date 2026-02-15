@@ -59,8 +59,28 @@ class Planet:
         self.y += self.y_velocity * self.TIME
         self.orbit.append((self.x, self.y))
 
-
     def draw(self, win):
         x = self.x * self.SCALE + WIDTH / 2
         y = self.y * self.SCALE + HEIGHT / 2
+
+        if len(self.orbit) > 2:
+            updated_points = []
+            for point in self.orbit[-50:]:
+                px, py = point
+                px = px * self.SCALE + WIDTH / 2
+                py = py * self.SCALE + HEIGHT / 2
+                updated_points.append((px, py))
+
+            # Draw the tail segment by segment to create a fading effect
+            if len(updated_points) >= 2:
+                for i in range(len(updated_points) - 1):
+                    # Calculate fade factor (0.0 to 1.0)
+                    fade = (i + 1) / len(updated_points)
+
+                    # Apply fade to RGB values to dim them towards black
+                    r, g, b = self.color
+                    current_color = (int(r * fade), int(g * fade), int(b * fade))
+
+                    pygame.draw.line(win, current_color, updated_points[i], updated_points[i + 1], 2)
+
         pygame.draw.circle(win, self.color, (x, y), self.radius)
