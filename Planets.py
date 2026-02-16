@@ -6,6 +6,7 @@ pygame.font.init()
 #pygame window size 1000x1000
 WIDTH = 1300
 HEIGHT = 1300
+FONT = pygame.font.SysFont("comicsans", 16)  # font to display the distance from sun
 
 #create class for different planets
 class Planet:
@@ -31,14 +32,15 @@ class Planet:
         other_y = other.y
         distance_x = other_x - self.x
         distance_y = other_y - self.y
-        distance = math.sqrt((distance_x ** 2) + (distance_y ** 2))
-        force = (self.G * self.mass * other.mass) / distance ** 2 #force of attraction formula
+        distance = math.sqrt(distance_x ** 2 + distance_y ** 2)
+
+        if other.is_sun:
+            self.distance_to_sun = distance / 1000
+
+        force = self.G * self.mass * other.mass / distance ** 2 #force of attraction formula
         angle = math.atan2(distance_y, distance_x)
         x_force = math.cos(angle) * force
         y_force = math.sin(angle) * force
-
-        if other.is_sun:
-            self.distance_to_sun = distance
 
         return x_force, y_force
 
@@ -71,16 +73,17 @@ class Planet:
                 py = py * self.SCALE + HEIGHT / 2
                 updated_points.append((px, py))
 
-            # Draw the tail segment by segment to create a fading effect
+            #Draw the tail segment by segment to create a fading effect
             if len(updated_points) >= 2:
                 for i in range(len(updated_points) - 1):
-                    # Calculate fade factor (0.0 to 1.0)
                     fade = (i + 1) / len(updated_points)
-
-                    # Apply fade to RGB values to dim them towards black
                     r, g, b = self.color
                     current_color = (int(r * fade), int(g * fade), int(b * fade))
 
                     pygame.draw.line(win, current_color, updated_points[i], updated_points[i + 1], 2)
 
         pygame.draw.circle(win, self.color, (x, y), self.radius)
+
+        if not self.is_sun:
+            dist_text = FONT.render(f"{round(self.distance_to_sun, 1)} km", 1, (255, 255, 255))
+            win.blit(dist_text, (x - dist_text.get_width()/2, y - dist_text.get_height()/2))

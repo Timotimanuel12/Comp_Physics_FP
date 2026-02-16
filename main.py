@@ -13,7 +13,7 @@ def main():
     clock = pygame.time.Clock()
 
     sun = Planet(0, 0, 30, 1.988416 * (10 ** 30), (255, 255, 0))
-    sun.sun = True
+    sun.is_sun = True
 
     # Earth Radius 15
     earth = Planet(1 * Planet.AU, 0, 16, 5.9722 * (10 ** 24), (0, 0, 255))
@@ -36,14 +36,18 @@ def main():
     jupiter.y_velocity = 1.3056 * (10**4)
 
     #Saturn
-    saturn = Planet(9.50 * Planet.AU, 0, 20, 5.6832 * (10**26), (237, 219, 173))
+    saturn = Planet(9.50 * Planet.AU, 0, 21, 5.6832 * (10**26), (237, 219, 173))
     saturn.y_velocity = 9.6391 * (10**3)
+
+    #Uranus
+    uranus = Planet(19 * Planet.AU, 0, 19, 8.6810 * (10**25), (172, 229, 238))
+    uranus.y_velocity = 6.7991 * (10**3)
 
     #Neptune
     neptune = Planet(30.06 * Planet.AU, 0, 19, 1.0241 * (10**26), (124, 183, 187))
     neptune.y_velocity = 5.4349 * (10**3)
 
-    planets = [sun, earth, venus, mercury, mars, jupiter, neptune, saturn]
+    planets = [sun, earth, venus, mercury, mars, jupiter, neptune, saturn, uranus]
 
     while run:
         clock.tick(60)
