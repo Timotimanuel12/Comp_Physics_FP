@@ -1,0 +1,509 @@
+--- Cell 2 ---
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import FancyArrowPatch
+from mpl_toolkits.mplot3d import proj3d
+from IPython.display import HTML, display
+import warnings
+warnings.filterwarnings('ignore')
+
+# ── Physical constants ──────────────────────────────────────────────────────
+# Using AU (astronomical units), Solar Masses, Years as unit system
+# G in these units = 4π²  AU³ / (M_sun · yr²)
+G = 4 * np.pi**2          # AU³ / (M_sun · yr²)
+DAYS_PER_YEAR = 365.25
+DT_DAYS = 1.0             # 1-day timestep
+DT = DT_DAYS / DAYS_PER_YEAR  # in years
+
+print("Unit system: AU | Solar Masses | Years")
+print(f"G = 4π² = {G:.6f}  AU³/(M☉·yr²)")
+print(f"Timestep dt = {DT_DAYS} day = {DT:.6f} yr")
+
+
+--- Cell 5 ---
+# ── Real initial conditions (J2000.0 epoch, heliocentric) ──────────────────
+# Source: NASA Jet Propulsion Laboratory Horizons System
+# Positions in AU, velocities in AU/year, masses in Solar masses
+
+bodies = {
+    'Sun': {
+        'mass': 1.0,
+        'pos':  np.array([0.0,        0.0,        0.0       ]),
+        'vel':  np.array([0.0,        0.0,        0.0       ]),
+        'color': '#FDB813',
+        'size':  20,
+        'zorder': 5,
+    },
+    'Mercury': {
+        'mass': 1.6601e-7,
+        'pos':  np.array([-0.3872,    -0.0,        0.0       ]),
+        'vel':  np.array([0.0,       -10.064,      0.0       ]),  # AU/yr
+        'color': '#b5b5b5',
+        'size':  4,
+        'zorder': 4,
+    },
+    'Venus': {
+        'mass': 2.4478e-6,
+        'pos':  np.array([0.7233,     0.0,        0.0       ]),
+        'vel':  np.array([0.0,        7.385,       0.0       ]),
+        'color': '#e8cda0',
+        'size':  7,
+        'zorder': 4,
+    },
+    'Earth': {
+        'mass': 3.0034e-6,
+        'pos':  np.array([-1.0,       0.0,        0.0       ]),
+        'vel':  np.array([0.0,       -6.283,       0.01      ]),
+        'color': '#4FC3F7',
+        'size':  7,
+        'zorder': 4,
+    },
+    'Mars': {
+        'mass': 3.2271e-7,
+        'pos':  np.array([1.524,      0.0,        0.0       ]),
+        'vel':  np.array([0.0,        5.076,      -0.05      ]),
+        'color': '#E57373',
+        'size':  5,
+        'zorder': 4,
+    },
+}
+
+names  = list(bodies.keys())
+masses = np.array([bodies[n]['mass'] for n in names])
+pos    = np.array([bodies[n]['pos']  for n in names], dtype=float)
+vel    = np.array([bodies[n]['vel']  for n in names], dtype=float)
+colors = [bodies[n]['color'] for n in names]
+sizes  = [bodies[n]['size']  for n in names]
+
+N = len(names)
+print(f"Bodies ({N}): {names}")
+print(f"\nMasses (Solar masses):")
+for i, n in enumerate(names):
+    print(f"  {n:10s}: {masses[i]:.4e} M☉")
+
+
+--- Cell 7 ---
+def compute_accelerations(pos, masses):
+    """
+    Compute gravitational acceleration on each body due to all others.
+    a_i = G * sum_{j≠i} m_j * (r_j - r_i) / |r_j - r_i|^3
+    Returns: acc array shape (N, 3)
+    """
+    N = len(masses)
+    acc = np.zeros_like(pos)
+    for i in range(N):
+        for j in range(N):
+            if i == j:
+                continue
+            dr = pos[j] - pos[i]           # displacement vector
+            r  = np.linalg.norm(dr)        # scalar distance
+            acc[i] += G * masses[j] * dr / r**3
+    return acc
+
+
+def euler_step(pos, vel, masses, dt):
+    """Explicit Euler integration — one timestep."""
+    acc      = compute_accelerations(pos, masses)
+    vel_new  = vel + acc * dt
+    pos_new  = pos + vel_new * dt
+    return pos_new, vel_new
+
+
+def compute_energy(pos, vel, masses):
+    """Total mechanical energy: kinetic + gravitational potential."""
+    N = len(masses)
+    # Kinetic
+    KE = 0.5 * np.sum(masses[:, None] * vel**2)
+    # Potential
+    PE = 0.0
+    for i in range(N):
+        for j in range(i+1, N):
+            r   = np.linalg.norm(pos[j] - pos[i])
+            PE -= G * masses[i] * masses[j] / r
+    return KE + PE
+
+
+def compute_angular_momentum(pos, vel, masses):
+    """Total angular momentum vector L = sum m_i (r_i x v_i)."""
+    L = np.zeros(3)
+    for i in range(len(masses)):
+        L += masses[i] * np.cross(pos[i], vel[i])
+    return L
+
+
+print("Physics engine ready.")
+print(f"Initial total energy  : {compute_energy(pos, vel, masses):.6f} AU²·M☉/yr²")
+print(f"Initial angular momentum |L|: {np.linalg.norm(compute_angular_momentum(pos, vel, masses)):.6f}")
+
+
+--- Cell 9 ---
+# ── Simulation parameters ──────────────────────────────────────────────────
+SIM_YEARS  = 2            # total simulation time in Earth years
+STEPS      = int(SIM_YEARS * DAYS_PER_YEAR / DT_DAYS)  # 1-day steps
+SAVE_EVERY = 1            # save every N steps
+
+print(f"Simulating {SIM_YEARS} years  ({STEPS} steps at dt={DT_DAYS} day)")
+
+# ── Storage ─────────────────────────────────────────────────────────────────
+n_saved      = STEPS // SAVE_EVERY
+traj         = np.zeros((n_saved, N, 3))  # positions
+energies     = np.zeros(n_saved)
+times        = np.zeros(n_saved)
+
+# ── Initial state ────────────────────────────────────────────────────────────
+p = pos.copy()
+v = vel.copy()
+E0 = compute_energy(p, v, masses)
+
+save_idx = 0
+for step in range(STEPS):
+    p, v = euler_step(p, v, masses, DT)
+    if step % SAVE_EVERY == 0 and save_idx < n_saved:
+        traj[save_idx]    = p
+        energies[save_idx] = compute_energy(p, v, masses)
+        times[save_idx]   = (step + 1) * DT
+        save_idx += 1
+
+print(f"Simulation complete. Saved {save_idx} frames.")
+print(f"Energy at t=0  : {E0:.6f}")
+print(f"Energy at t=end: {energies[-1]:.6f}")
+print(f"Energy drift   : {abs(energies[-1] - E0)/abs(E0)*100:.4f}%")
+
+
+--- Cell 11 ---
+fig = plt.figure(figsize=(12, 10))
+ax  = fig.add_subplot(111, projection='3d')
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_facecolor('#0a0a1a')
+
+# Draw orbits
+for i, name in enumerate(names):
+    if name == 'Sun':
+        ax.scatter(*traj[0, i], s=250, color=colors[i], zorder=10,
+                   label='Sun', edgecolors='white', linewidths=0.5)
+        continue
+    ax.plot(traj[:, i, 0], traj[:, i, 1], traj[:, i, 2],
+            color=colors[i], linewidth=1.2, alpha=0.85, label=name)
+    # Final position marker
+    ax.scatter(*traj[-1, i], s=sizes[i]*8, color=colors[i],
+               edgecolors='white', linewidths=0.5, zorder=5)
+    # Shadow projection onto XY plane (illusion of depth)
+    ax.plot(traj[:, i, 0], traj[:, i, 1],
+            zs=-0.15, zdir='z',
+            color=colors[i], alpha=0.18, linewidth=0.7)
+
+# Styling
+ax.set_xlabel('X (AU)', color='white', labelpad=8)
+ax.set_ylabel('Y (AU)', color='white', labelpad=8)
+ax.set_zlabel('Z (AU)', color='white', labelpad=8)
+ax.tick_params(colors='white')
+ax.xaxis.pane.fill = False
+ax.yaxis.pane.fill = False
+ax.zaxis.pane.fill = False
+ax.xaxis.pane.set_edgecolor('#333355')
+ax.yaxis.pane.set_edgecolor('#333355')
+ax.zaxis.pane.set_edgecolor('#333355')
+ax.grid(True, color='#222244', linewidth=0.5)
+ax.view_init(elev=25, azim=45)
+
+legend = ax.legend(loc='upper left', facecolor='#111133',
+                   edgecolor='#444466', labelcolor='white', fontsize=10)
+ax.set_title(f'Inner Solar System — {SIM_YEARS}-year Simulation\n(Euler Integration, dt = {DT_DAYS} day)',
+             color='white', fontsize=13, pad=15)
+
+plt.tight_layout()
+plt.savefig('orbits_3d.png', dpi=150, bbox_inches='tight',
+            facecolor='#0a0a1a')
+plt.show()
+print("3D orbit plot saved as orbits_3d.png")
+
+
+--- Cell 13 ---
+fig, ax = plt.subplots(figsize=(8, 8))
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_facecolor('#0a0a1a')
+
+for i, name in enumerate(names):
+    if name == 'Sun':
+        ax.scatter(0, 0, s=300, color=colors[i], zorder=10,
+                   label='Sun', edgecolors='white', linewidths=0.5)
+        continue
+    ax.plot(traj[:, i, 0], traj[:, i, 1],
+            color=colors[i], linewidth=1.3, alpha=0.9, label=name)
+    ax.scatter(*traj[-1, i, :2], s=sizes[i]*10,
+               color=colors[i], edgecolors='white', linewidths=0.5, zorder=5)
+
+ax.set_xlabel('X (AU)', color='white')
+ax.set_ylabel('Y (AU)', color='white')
+ax.tick_params(colors='white')
+ax.spines[:].set_color('#333355')
+ax.set_facecolor('#0a0a1a')
+ax.grid(True, color='#1a1a33', linewidth=0.6)
+ax.set_aspect('equal')
+ax.legend(facecolor='#111133', edgecolor='#444466',
+          labelcolor='white', fontsize=10)
+ax.set_title('Top-Down View — Orbital Paths (XY Plane)',
+             color='white', fontsize=12)
+ax.tick_params(colors='#8888aa')
+
+plt.tight_layout()
+plt.savefig('orbits_topdown.png', dpi=150, bbox_inches='tight',
+            facecolor='#0a0a1a')
+plt.show()
+
+
+--- Cell 15 ---
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+fig.patch.set_facecolor('#0a0a1a')
+
+relative_error = np.abs(energies - E0) / np.abs(E0) * 100
+
+# ── Plot 1: Energy over time ─────────────────────────────────────────────────
+ax1 = axes[0]
+ax1.set_facecolor('#0d0d25')
+ax1.plot(times, energies, color='#4FC3F7', linewidth=1.5, label='Total Energy')
+ax1.axhline(E0, color='#FDB813', linewidth=1, linestyle='--', label='E₀ (initial)', alpha=0.7)
+ax1.set_xlabel('Time (years)', color='white')
+ax1.set_ylabel('Energy  [AU² M☉ / yr²]', color='white')
+ax1.set_title('Total Mechanical Energy vs Time', color='white')
+ax1.tick_params(colors='#888aaa')
+ax1.spines[:].set_color('#333355')
+ax1.legend(facecolor='#111133', edgecolor='#444466', labelcolor='white')
+ax1.grid(True, color='#1a1a33', linewidth=0.5)
+
+# ── Plot 2: Relative error ───────────────────────────────────────────────────
+ax2 = axes[1]
+ax2.set_facecolor('#0d0d25')
+ax2.plot(times, relative_error, color='#E57373', linewidth=1.5)
+ax2.fill_between(times, relative_error, alpha=0.15, color='#E57373')
+ax2.set_xlabel('Time (years)', color='white')
+ax2.set_ylabel('Relative Energy Error (%)', color='white')
+ax2.set_title('Numerical Error Growth (Euler Method)', color='white')
+ax2.tick_params(colors='#888aaa')
+ax2.spines[:].set_color('#333355')
+ax2.grid(True, color='#1a1a33', linewidth=0.5)
+
+plt.suptitle('Error Analysis — Energy Conservation', color='white', fontsize=13, y=1.01)
+plt.tight_layout()
+plt.savefig('error_analysis.png', dpi=150, bbox_inches='tight', facecolor='#0a0a1a')
+plt.show()
+
+print(f"Max relative energy error : {relative_error.max():.4f}%")
+print(f"Final relative energy error: {relative_error[-1]:.4f}%")
+print(f"\nNote: Euler method accumulates error linearly with time.")
+print(f"A smaller dt or higher-order method (RK4) would reduce this drift.")
+
+
+--- Cell 17 ---
+TEST_YEARS = 1
+dt_days_list = [4.0, 2.0, 1.0, 0.5]
+colors_dt    = ['#E57373', '#FDB813', '#4FC3F7', '#81C784']
+
+fig, ax = plt.subplots(figsize=(10, 5))
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_facecolor('#0d0d25')
+
+for dt_d, col in zip(dt_days_list, colors_dt):
+    dt_y   = dt_d / DAYS_PER_YEAR
+    steps  = int(TEST_YEARS * DAYS_PER_YEAR / dt_d)
+    p_, v_ = pos.copy(), vel.copy()
+    E0_    = compute_energy(p_, v_, masses)
+    errs, ts = [], []
+    for step in range(steps):
+        p_, v_ = euler_step(p_, v_, masses, dt_y)
+        if step % max(1, steps//200) == 0:
+            E_ = compute_energy(p_, v_, masses)
+            errs.append(abs(E_ - E0_) / abs(E0_) * 100)
+            ts.append((step+1) * dt_y)
+    ax.plot(ts, errs, color=col, linewidth=1.4, label=f'dt = {dt_d} days')
+
+ax.set_xlabel('Time (years)', color='white')
+ax.set_ylabel('Relative Energy Error (%)', color='white')
+ax.set_title('Energy Error vs Timestep Size (1-year run)', color='white', fontsize=12)
+ax.tick_params(colors='#888aaa')
+ax.spines[:].set_color('#333355')
+ax.legend(facecolor='#111133', edgecolor='#444466', labelcolor='white')
+ax.grid(True, color='#1a1a33', linewidth=0.5)
+plt.tight_layout()
+plt.savefig('timestep_comparison.png', dpi=150, bbox_inches='tight', facecolor='#0a0a1a')
+plt.show()
+
+print("Smaller timestep → lower error, as expected from Euler O(dt) truncation.")
+
+
+--- Cell 19 ---
+# Known semi-major axes (AU) and periods (years)
+kepler_data = {
+    'Mercury': {'a': 0.387, 'T_known': 0.241},
+    'Venus':   {'a': 0.723, 'T_known': 0.615},
+    'Earth':   {'a': 1.000, 'T_known': 1.000},
+    'Mars':    {'a': 1.524, 'T_known': 1.881},
+}
+
+print(f"{'Planet':10s} | {'a (AU)':8s} | {'T_analytical (yr)':18s} | {'T_kepler (yr)':14s} | {'Error %':8s}")
+print("-" * 70)
+
+a_vals, T_analytical, T_kepler_vals = [], [], []
+for name, d in kepler_data.items():
+    a = d['a']
+    T_anal = a**1.5          # Kepler's 3rd Law (AU, Solar masses, years)
+    T_kep  = 2 * np.pi * np.sqrt(a**3 / G)  # from G definition
+    err    = abs(T_anal - T_kep) / T_anal * 100
+    print(f"{name:10s} | {a:8.3f} | {T_anal:18.4f} | {T_kep:14.4f} | {err:8.4f}%")
+    a_vals.append(a)
+    T_analytical.append(T_anal)
+    T_kepler_vals.append(T_kep)
+
+# Plot T² vs a³
+fig, ax = plt.subplots(figsize=(7, 5))
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_facecolor('#0d0d25')
+
+a_arr = np.array(a_vals)
+T_arr = np.array(T_analytical)
+a_fine = np.linspace(0.3, 1.7, 100)
+
+ax.plot(a_fine**3, a_fine**3, '--', color='#FDB813', linewidth=1.5,
+        alpha=0.7, label='Kepler: T² = a³')
+for i, name in enumerate(kepler_data):
+    col = bodies[name]['color']
+    ax.scatter(a_arr[i]**3, T_arr[i]**2, s=80, color=col,
+               zorder=5, edgecolors='white', linewidths=0.5)
+    ax.annotate(name, (a_arr[i]**3, T_arr[i]**2),
+                textcoords='offset points', xytext=(6, 4),
+                color='white', fontsize=9)
+
+ax.set_xlabel('a³  (AU³)', color='white')
+ax.set_ylabel('T²  (yr²)', color='white')
+ax.set_title("Kepler's Third Law Verification: T² ∝ a³", color='white')
+ax.tick_params(colors='#888aaa')
+ax.spines[:].set_color('#333355')
+ax.legend(facecolor='#111133', edgecolor='#444466', labelcolor='white')
+ax.grid(True, color='#1a1a33', linewidth=0.5)
+plt.tight_layout()
+plt.savefig('kepler_verification.png', dpi=150, bbox_inches='tight', facecolor='#0a0a1a')
+plt.show()
+
+
+--- Cell 21 ---
+# ── Re-run simulation for animation (shorter, denser) ──────────────────────
+ANIM_YEARS  = 2
+ANIM_STEPS  = int(ANIM_YEARS * DAYS_PER_YEAR)   # 1-day steps = ~730
+TRAIL_LEN   = 120   # frames of trail to show
+
+p_anim = pos.copy()
+v_anim = vel.copy()
+
+traj_anim = np.zeros((ANIM_STEPS, N, 3))
+for step in range(ANIM_STEPS):
+    p_anim, v_anim = euler_step(p_anim, v_anim, masses, DT)
+    traj_anim[step] = p_anim
+
+# ── Build figure ─────────────────────────────────────────────────────────────
+fig = plt.figure(figsize=(10, 8))
+ax  = fig.add_subplot(111, projection='3d')
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_facecolor('#0a0a1a')
+ax.view_init(elev=28, azim=45)
+
+LIM = 1.8
+ax.set_xlim(-LIM, LIM); ax.set_ylim(-LIM, LIM); ax.set_zlim(-0.25, 0.25)
+ax.set_xlabel('X (AU)', color='#666688', fontsize=8, labelpad=6)
+ax.set_ylabel('Y (AU)', color='#666688', fontsize=8, labelpad=6)
+ax.set_zlabel('Z (AU)', color='#666688', fontsize=8, labelpad=6)
+ax.tick_params(colors='#555577', labelsize=7)
+ax.xaxis.pane.fill = False; ax.yaxis.pane.fill = False; ax.zaxis.pane.fill = False
+ax.xaxis.pane.set_edgecolor('#1a1a33')
+ax.yaxis.pane.set_edgecolor('#1a1a33')
+ax.zaxis.pane.set_edgecolor('#1a1a33')
+ax.grid(True, color='#111133', linewidth=0.4)
+
+# Static sun glow
+ax.scatter(0, 0, 0, s=400, color='#FDB813', zorder=10,
+           edgecolors='#ffeebb', linewidths=1)
+ax.scatter(0, 0, 0, s=900, color='#FDB813', alpha=0.15, zorder=9)
+
+# Artists: trail lines + planet dots + shadow dots
+trail_lines  = []
+planet_dots  = []
+shadow_dots  = []
+shadow_lines = []
+
+planet_indices = [i for i, n in enumerate(names) if n != 'Sun']
+
+for i in planet_indices:
+    tl, = ax.plot([], [], [], color=colors[i], linewidth=1.0, alpha=0.8)
+    pd  = ax.scatter([], [], [], s=sizes[i]*12, color=colors[i],
+                     edgecolors='white', linewidths=0.4, zorder=5)
+    sd  = ax.scatter([], [], [], s=sizes[i]*3,  color=colors[i],
+                     alpha=0.25, zorder=2)
+    sl, = ax.plot([], [], [], color=colors[i], linewidth=0.5, alpha=0.15)
+    trail_lines.append(tl)
+    planet_dots.append(pd)
+    shadow_dots.append(sd)
+    shadow_lines.append(sl)
+
+time_text = ax.text2D(0.02, 0.96, '', transform=ax.transAxes,
+                       color='white', fontsize=10)
+
+FLOOR_Z = -0.22
+
+def init():
+    for tl in trail_lines: tl.set_data([], []); tl.set_3d_properties([])
+    for sl in shadow_lines: sl.set_data([], []); sl.set_3d_properties([])
+    return trail_lines + shadow_lines
+
+def update(frame):
+    start = max(0, frame - TRAIL_LEN)
+    for k, i in enumerate(planet_indices):
+        x = traj_anim[start:frame+1, i, 0]
+        y = traj_anim[start:frame+1, i, 1]
+        z = traj_anim[start:frame+1, i, 2]
+        # Trail
+        trail_lines[k].set_data(x, y)
+        trail_lines[k].set_3d_properties(z)
+        # Current position — perspective size trick
+        depth_scale = 1 + traj_anim[frame, i, 0] * 0.3
+        planet_dots[k]._sizes  = np.array([sizes[i] * 12 * max(0.5, depth_scale)])
+        planet_dots[k]._offsets3d = (
+            [traj_anim[frame, i, 0]],
+            [traj_anim[frame, i, 1]],
+            [traj_anim[frame, i, 2]]
+        )
+        # Shadow on floor
+        shadow_dots[k]._offsets3d = (
+            [traj_anim[frame, i, 0]],
+            [traj_anim[frame, i, 1]],
+            [FLOOR_Z]
+        )
+        shadow_lines[k].set_data(x, y)
+        shadow_lines[k].set_3d_properties(np.full_like(z, FLOOR_Z))
+
+    days_elapsed = frame
+    years_elapsed = days_elapsed / DAYS_PER_YEAR
+    time_text.set_text(f't = {years_elapsed:.2f} yr  ({days_elapsed} days)')
+    return trail_lines + planet_dots + shadow_dots + shadow_lines + [time_text]
+
+ani = animation.FuncAnimation(
+    fig, update,
+    frames=ANIM_STEPS,
+    init_func=init,
+    interval=20,
+    blit=False
+)
+
+plt.title('Inner Solar System — N-body Simulation', color='white', fontsize=12, pad=10)
+
+# Save as GIF
+writer = animation.PillowWriter(fps=30)
+ani.save('planetary_motion.gif', writer=writer)
+plt.close()
+print("Animation saved as planetary_motion.gif")
+
+# Display in notebook
+from IPython.display import Image
+display(Image('planetary_motion.gif'))
+
