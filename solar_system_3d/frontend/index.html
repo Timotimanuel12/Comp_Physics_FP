@@ -118,6 +118,11 @@
 
 <div id="status-badge"><div id="status-dot"></div><span id="status-text">CONNECTING…</span></div>
 <div id="day-counter">DAY&nbsp;&nbsp;<span id="day-val">0</span></div>
+<!-- Real-time elapsed clock (only visible when real-time mode is ON) -->
+<div id="real-clock" style="
+  display:none; position:fixed; top:48px; left:20px; z-index:10;
+  font-family:'Orbitron',sans-serif; font-size:10px; color:rgba(80,200,255,0.8);
+  letter-spacing:0.08em;">REAL TIME&nbsp;&nbsp;<span id="real-clock-val">00:00:00</span></div>
 
 <div id="planet-panel">
   <h3>Planets</h3>
@@ -130,7 +135,7 @@
 </div>
 
 <div id="bottom-container">
-  <div id="panel-tab" onclick="togglePanel()">
+  <div id="panel-tab">
     <span id="panel-arrow">&#9650;</span> CONTROLS
   </div>
   <div id="hint">W/A/S/D fly &middot; Scroll zoom &middot; Drag rotate &middot; Click planet to focus</div>
@@ -396,14 +401,24 @@ function updateTrail(name, trailPts) {
 // ═══════════════════════════════════════════════════════════════
 // WEBSOCKET
 // ═══════════════════════════════════════════════════════════════
-const statusDot  = document.getElementById('status-dot');
-const statusText = document.getElementById('status-text');
-const dayVal     = document.getElementById('day-val');
+const statusDot      = document.getElementById('status-dot');
+const statusText     = document.getElementById('status-text');
+const dayVal         = document.getElementById('day-val');
+const realClockEl    = document.getElementById('real-clock');
+const realClockVal   = document.getElementById('real-clock-val');
 let ws, wsReady = false;
 let isPaused = false;
 
 function sendToServer(obj) {
   if (ws && wsReady) ws.send(JSON.stringify(obj));
+}
+
+// Format seconds → hh:mm:ss
+function formatRealTime(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
 function connectWS() {
@@ -427,6 +442,10 @@ function connectWS() {
   ws.onmessage = (ev) => {
     const payload = JSON.parse(ev.data);
     dayVal.textContent = payload.day.toLocaleString();
+    // Show real-time clock when realtime mode is active
+    if (isRealtime && payload.real_seconds !== undefined) {
+      realClockVal.textContent = formatRealTime(payload.real_seconds);
+    }
     for (const p of payload.planets) {
       ensurePlanet(p);
       const obj = planetObjects[p.name];
@@ -448,7 +467,10 @@ let panelCollapsed = false;
 function togglePanel() {
   panelCollapsed = !panelCollapsed;
   document.getElementById('bottom-container').classList.toggle('collapsed', panelCollapsed);
+  document.getElementById('panel-arrow').textContent = panelCollapsed ? '\u25BC' : '\u25B2';
 }
+// Fix: attach via addEventListener (onclick in HTML can't reach module-scope functions)
+document.getElementById('panel-tab').addEventListener('click', togglePanel);
 
 // ═══════════════════════════════════════════════════════════════
 // CONTROLS
@@ -476,8 +498,8 @@ pauseBtn.addEventListener('click', () => {
 });
 
 // ── Real Time button ─────────────────────────────────────────────
-// 1 simulated day = 1 real second.
-// Mercury orbits in ~88s, Earth ~6min, Jupiter ~4hrs, Neptune ~16hrs
+// True 1:1 real time: 1 real second = 1 physics second.
+// Planets barely move but the elapsed real-time clock ticks every second.
 let isRealtime = false;
 const realtimeBtn = document.getElementById('realtime-btn');
 realtimeBtn.addEventListener('click', () => {
@@ -487,8 +509,11 @@ realtimeBtn.addEventListener('click', () => {
   speedSlider.disabled = isRealtime;
   speedSlider.style.opacity = isRealtime ? '0.35' : '1';
   speedValEl.textContent = isRealtime
-    ? '1 day / sec (real)'
+    ? 'true 1:1 real time'
     : (+speedSlider.value === 1 ? '1 day / frame' : `${speedSlider.value} days / frame`);
+  // Show / hide the real-time elapsed clock
+  realClockEl.style.display = isRealtime ? 'block' : 'none';
+  if (isRealtime) realClockVal.textContent = '00:00:00';
   sendToServer({ realtime: isRealtime });
 });
 

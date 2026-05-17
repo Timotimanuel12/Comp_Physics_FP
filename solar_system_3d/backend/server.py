@@ -33,14 +33,15 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WS] Client connected")
 
-    planets  = make_planets()
-    speed    = [1]      # steps per frame
-    day      = [0]      # simulated days elapsed
-    paused   = [False]  # pause flag
-    realtime = [False]  # real-time mode: 1 sim-day = 1 real second
+    planets      = make_planets()
+    speed        = [1]      # days per frame (normal mode)
+    day          = [0.0]    # simulated days elapsed (float for realtime sub-day precision)
+    real_seconds = [0.0]    # real seconds elapsed (realtime mode only)
+    paused       = [False]
+    realtime     = [False]  # true 1:1 real-time mode
 
     async def receive_loop():
-        """Listen for control messages from the frontend (e.g. speed changes)."""
+        """Listen for control messages from the frontend."""
         try:
             while True:
                 raw  = await websocket.receive_text()
@@ -53,45 +54,52 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"[WS] Simulation {'paused' if paused[0] else 'resumed'}")
                 if "realtime" in data:
                     realtime[0] = bool(data["realtime"])
+                    real_seconds[0] = 0.0
                     print(f"[WS] Real-time mode {'ON' if realtime[0] else 'OFF'}")
                 if data.get("reset"):
-                    planets[:] = make_planets()
-                    day[0] = 0
-                    paused[0]   = False
-                    realtime[0] = False
+                    planets[:]      = make_planets()
+                    day[0]          = 0.0
+                    real_seconds[0] = 0.0
+                    paused[0]       = False
+                    realtime[0]     = False
                     print("[WS] Simulation reset")
         except (WebSocketDisconnect, Exception):
             pass
 
     async def send_loop():
-        """Run the physics and push planet positions to the frontend at ~60 fps."""
+        """Run the physics and push planet positions to the frontend."""
+        REALTIME_DT = 1.0          # 1 real second per physics step
+        REALTIME_FPS = 60          # run at 60fps in realtime mode
+        SECS_PER_DAY = 86_400.0    # convert seconds → days
+
         try:
             while True:
-                # ── Physics steps ─────────────────────────────────────────
                 if not paused[0]:
                     if realtime[0]:
-                        # Real-time: 1 simulated day per 1 real second
+                        # True real-time: dt = 1 second, run at 60 fps
+                        # So every frame advances 1/60 of a second of physics
+                        dt_frame = REALTIME_DT / REALTIME_FPS
                         for planet in planets:
-                            planet.update_position(planets)
-                        day[0] += 1
+                            planet.update_position(planets, dt=dt_frame)
+                        real_seconds[0] += dt_frame
+                        day[0] = real_seconds[0] / SECS_PER_DAY
                     else:
                         for _ in range(speed[0]):
                             for planet in planets:
                                 planet.update_position(planets)
                             day[0] += 1
 
-                # ── Serialize and send ─────────────────────────────────────
+                # Serialize and send
                 payload = {
-                    "day":     day[0],
-                    "planets": [p.to_dict() for p in planets],
+                    "day":          int(day[0]),
+                    "real_seconds": round(real_seconds[0], 2),
+                    "planets":      [p.to_dict() for p in planets],
                 }
                 await websocket.send_text(json.dumps(payload))
 
-                # Tick rate:
-                #   real-time → 1 fps (1 sim-day per real second)
-                #   normal    → 12–60 fps scaled by speed slider
+                # Tick rate
                 if realtime[0]:
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(1 / REALTIME_FPS)   # 60 fps real-time
                 else:
                     fps = 12 + (speed[0] - 1) * (60 - 12) / 364
                     await asyncio.sleep(1 / fps)

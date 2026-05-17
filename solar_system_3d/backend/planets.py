@@ -114,11 +114,13 @@ class Planet:
         return force_mag * (dr / distance)       # force vector with direction
 
     # ── Ported from Planets.py → update_position() ──────────────────────────
-    def update_position(self, all_planets: list) -> None:
+    def update_position(self, all_planets: list, dt: float = TIME_STEP) -> None:
         """
         Euler integration — same logic as Planets.py, extended to 3D.
           v += (F / m) * dt
           x += v * dt
+        dt defaults to TIME_STEP (1 day) but can be set to any value,
+        e.g. 1 second for real-time mode.
         """
         if self.is_sun:
             return   # Sun is fixed at origin
@@ -130,8 +132,8 @@ class Planet:
             total_force += self.force_of_attraction(other)
 
         acceleration  = total_force / self.mass
-        self.vel     += acceleration * TIME_STEP
-        self.pos     += self.vel     * TIME_STEP
+        self.vel     += acceleration * dt
+        self.pos     += self.vel     * dt
         if not self.is_sun:
             self._trail_buffer.append(self.pos.copy())
 
