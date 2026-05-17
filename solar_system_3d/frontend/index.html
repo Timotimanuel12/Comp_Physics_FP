@@ -294,11 +294,25 @@ const PLANET_TEXTURES = {
   Neptune: '/textures/neptune.jpg',
 };
 
-// Axial spin rates (rad/s) — roughly proportional to real rotation periods
-const SPIN_RATE = {
-  Sun: 0.0004, Mercury: 0.0008, Venus: 0.0003, Earth: 0.003,
-  Mars: 0.003, Jupiter: 0.007, Saturn: 0.006, Uranus: 0.004, Neptune: 0.0045,
+// ── Sidereal rotation periods (days) — NASA GSFC Planetary Fact Sheets ──────
+// Source: https://nssdc.gsfc.nasa.gov/planetary/factsheet/
+// Dr. David R. Williams, NASA Goddard Space Flight Center
+// Negative values = RETROGRADE rotation (spins opposite to orbital direction)
+const ROTATION_PERIOD_DAYS = {
+  Sun:      25.38,    // Differential rotation; 25.38d at equator
+  Mercury:  58.646,   // Tidally influenced; 3:2 spin-orbit resonance with Sun
+  Venus:   -243.025,  // RETROGRADE — slower than its own year (224.7d)!
+  Earth:     0.99727, // 23h 56m 4s (sidereal day)
+  Mars:      1.02596, // 24h 37m 22s — very close to Earth
+  Jupiter:   0.41354, // 9h 55m — fastest rotation, causes visible oblate shape
+  Saturn:    0.44401, // 10h 33m — second fastest
+  Uranus:   -0.71833, // RETROGRADE — also tilted 97.8° (rolls on its side)
+  Neptune:   0.67125, // 16h 6m
 };
+
+// Visual spin scale: how many radians Earth rotates per frame at speed=1 (1 day/frame).
+// Chosen so Earth makes one visible rotation in ~2100 frames (~35s at 60fps).
+const EARTH_SPIN_VISUAL = 0.003;  // rad/frame @ speed=1
 
 function makePlanetMesh(pData) {
   const group = new THREE.Group();
@@ -721,10 +735,20 @@ function animate() {
     controls.target.lerp(flyTarget.look, 0.05);
     if (camera.position.distanceTo(flyTarget.pos) < 0.15) flyTarget = null;
   }
-  // Axial spin
+  // ── Axial spin (NASA sidereal rotation periods, speed-coupled) ──────────
+  // spin_per_frame = (EARTH_SPIN_VISUAL / period_days) * simDaysPerFrame
+  // → faster simulation = planets spin proportionally faster (physically correct)
+  // → negative period = retrograde (Venus, Uranus spin backwards)
+  const simDaysPerFrame = isRealtime
+    ? (1 / 86400)            // real-time: 1/86400 of a day per frame
+    : +speedSlider.value;    // normal: speed slider value
   for (const [name, obj] of Object.entries(planetObjects)) {
     const sm = obj.group.userData.sphereMesh;
-    if (sm) sm.rotation.y += (SPIN_RATE[name] ?? 0.002);
+    const period = ROTATION_PERIOD_DAYS[name];
+    if (sm && period !== undefined) {
+      // sign of period encodes direction; magnitude gives speed ratio
+      sm.rotation.y += (EARTH_SPIN_VISUAL / period) * simDaysPerFrame;
+    }
   }
   // Pulse highlight
   if (focusedPlanet && planetObjects[focusedPlanet]) {
