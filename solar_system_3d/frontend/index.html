@@ -378,8 +378,9 @@ function sendToServer(obj) {
 }
 
 function connectWS() {
-  // Dynamic URL: works on any port (localhost:8000, 8001, or deployed domain)
-  const wsUrl = `ws://${window.location.host}/ws`;
+  // Use wss:// on HTTPS (Railway/production) and ws:// on HTTP (localhost)
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${proto}//${window.location.host}/ws`;
   ws = new WebSocket(wsUrl);
   ws.onopen = () => {
     wsReady = true;
