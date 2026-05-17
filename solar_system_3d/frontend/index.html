@@ -57,12 +57,36 @@
     #info-card p { font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.75; }
     #info-card p strong { color: rgba(255,255,255,0.88); }
 
-    /* ── Bottom bar ── */
+    /* ── Bottom collapsible container ────────────────────────────── */
+    #bottom-container {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      z-index: 10; display: flex; flex-direction: column; align-items: center;
+      transition: transform 0.38s cubic-bezier(0.4,0,0.2,1);
+    }
+    #bottom-container.collapsed { transform: translateX(-50%) translateY(calc(100% - 26px)); }
+
+    #panel-tab {
+      background: rgba(8,8,18,0.82); border: 1px solid rgba(255,255,255,0.1);
+      border-bottom: none; border-radius: 10px 10px 0 0;
+      padding: 4px 20px; cursor: pointer; user-select: none;
+      font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 0.1em;
+      display: flex; align-items: center; gap: 6px; transition: color 0.18s;
+      font-family: 'Orbitron', sans-serif;
+    }
+    #panel-tab:hover { color: rgba(255,255,255,0.75); }
+    #panel-arrow { font-size: 8px; transition: transform 0.35s; }
+    #bottom-container.collapsed #panel-arrow { transform: rotate(180deg); }
+
+    #hint {
+      font-size: 10px; color: rgba(255,255,255,0.18); letter-spacing: 0.05em;
+      pointer-events: none; white-space: nowrap; margin-bottom: 5px;
+    }
+
     #control-bar {
-      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-      z-index: 10; background: rgba(8,8,18,0.78); border: 1px solid rgba(255,255,255,0.08);
-      backdrop-filter: blur(18px); border-radius: 14px; padding: 11px 22px;
+      background: rgba(8,8,18,0.78); border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(18px); border-radius: 14px 14px 0 0; padding: 11px 22px;
       display: flex; align-items: center; gap: 18px; user-select: none; flex-wrap: wrap;
+      width: max-content;
     }
     .ctrl-lbl { font-size: 10px; color: rgba(255,255,255,0.38); font-family: 'Orbitron', sans-serif; letter-spacing: 0.12em; white-space: nowrap; }
     #speed-slider {
@@ -82,11 +106,11 @@
       font-size: 11px; padding: 5px 11px; cursor: pointer; transition: all 0.18s; white-space: nowrap;
     }
     .bar-btn:hover { background: rgba(255,255,255,0.13); color: #fff; }
-    .divider { width: 1px; height: 20px; background: rgba(255,255,255,0.1); }
-    #hint {
-      position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
-      font-size: 10px; color: rgba(255,255,255,0.18); letter-spacing: 0.05em; pointer-events: none; white-space: nowrap;
+    .bar-btn.active-rt {
+      background: rgba(80,200,255,0.15); border-color: rgba(80,200,255,0.45);
+      color: #7df; box-shadow: 0 0 8px rgba(80,200,255,0.2);
     }
+    .divider { width: 1px; height: 20px; background: rgba(255,255,255,0.1); }
   </style>
 </head>
 <body>
@@ -105,19 +129,24 @@
   <p id="ic-body"></p>
 </div>
 
-<div id="hint">Scroll to zoom · Drag to rotate · Click list to teleport · Click planet in scene to focus</div>
-
-<div id="control-bar">
-  <span class="ctrl-lbl">SPEED</span>
-  <input type="range" id="speed-slider" min="1" max="365" value="1" />
-  <span id="speed-val">1 day / frame</span>
-  <div class="divider"></div>
-  <label class="tog"><input type="checkbox" id="trail-check" checked /> Trails</label>
-  <label class="tog"><input type="checkbox" id="orbit-check" checked /> Orbit rings</label>
-  <div class="divider"></div>
-  <button class="bar-btn" id="pause-btn">&#9646;&#9646; Pause</button>
-  <button class="bar-btn" id="view-all-btn">⊙ View All</button>
-  <button class="bar-btn" id="reset-btn">⟳ Reset</button>
+<div id="bottom-container">
+  <div id="panel-tab" onclick="togglePanel()">
+    <span id="panel-arrow">&#9650;</span> CONTROLS
+  </div>
+  <div id="hint">W/A/S/D fly &middot; Scroll zoom &middot; Drag rotate &middot; Click planet to focus</div>
+  <div id="control-bar">
+    <span class="ctrl-lbl">SPEED</span>
+    <input type="range" id="speed-slider" min="1" max="365" value="1" />
+    <span id="speed-val">1 day / frame</span>
+    <div class="divider"></div>
+    <label class="tog"><input type="checkbox" id="trail-check" checked /> Trails</label>
+    <label class="tog"><input type="checkbox" id="orbit-check" checked /> Orbit rings</label>
+    <div class="divider"></div>
+    <button class="bar-btn" id="realtime-btn">&#128336; Real Time</button>
+    <button class="bar-btn" id="pause-btn">&#9646;&#9646; Pause</button>
+    <button class="bar-btn" id="view-all-btn">&#8857; View All</button>
+    <button class="bar-btn" id="reset-btn">&#10227; Reset</button>
+  </div>
 </div>
 
 <script type="importmap">
@@ -413,6 +442,15 @@ function connectWS() {
 connectWS();
 
 // ═══════════════════════════════════════════════════════════════
+// PANEL COLLAPSE
+// ═══════════════════════════════════════════════════════════════
+let panelCollapsed = false;
+function togglePanel() {
+  panelCollapsed = !panelCollapsed;
+  document.getElementById('bottom-container').classList.toggle('collapsed', panelCollapsed);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CONTROLS
 // ═══════════════════════════════════════════════════════════════
 const speedSlider = document.getElementById('speed-slider');
@@ -426,19 +464,32 @@ speedSlider.addEventListener('input', () => {
   sendSpeed(v);
 });
 
-// ── Pause button ────────────────────────────────────────────────
+// ── Pause button
 const pauseBtn = document.getElementById('pause-btn');
 pauseBtn.addEventListener('click', () => {
   isPaused = !isPaused;
   pauseBtn.innerHTML = isPaused ? '&#9654; Resume' : '&#9646;&#9646; Pause';
-  pauseBtn.style.background = isPaused
-    ? 'rgba(100,200,100,0.15)'
-    : 'rgba(255,255,255,0.07)';
-  pauseBtn.style.borderColor = isPaused
-    ? 'rgba(100,200,100,0.4)'
-    : 'rgba(255,255,255,0.14)';
+  pauseBtn.style.background = isPaused ? 'rgba(100,200,100,0.15)' : '';
+  pauseBtn.style.borderColor = isPaused ? 'rgba(100,200,100,0.4)' : '';
   pauseBtn.style.color = isPaused ? '#8f8' : '';
   sendToServer({ paused: isPaused });
+});
+
+// ── Real Time button ─────────────────────────────────────────────
+// 1 simulated day = 1 real second.
+// Mercury orbits in ~88s, Earth ~6min, Jupiter ~4hrs, Neptune ~16hrs
+let isRealtime = false;
+const realtimeBtn = document.getElementById('realtime-btn');
+realtimeBtn.addEventListener('click', () => {
+  isRealtime = !isRealtime;
+  realtimeBtn.classList.toggle('active-rt', isRealtime);
+  realtimeBtn.innerHTML = isRealtime ? '&#128336; Real Time ON' : '&#128336; Real Time';
+  speedSlider.disabled = isRealtime;
+  speedSlider.style.opacity = isRealtime ? '0.35' : '1';
+  speedValEl.textContent = isRealtime
+    ? '1 day / sec (real)'
+    : (+speedSlider.value === 1 ? '1 day / frame' : `${speedSlider.value} days / frame`);
+  sendToServer({ realtime: isRealtime });
 });
 
 document.getElementById('trail-check').addEventListener('change', e => {
@@ -456,11 +507,18 @@ document.getElementById('orbit-check').addEventListener('change', e => {
 document.getElementById('reset-btn').addEventListener('click', () => {
   if (!ws || !wsReady) return;
   sendToServer({ reset: true });
+  // Clear pause state
   isPaused = false;
   pauseBtn.innerHTML = '&#9646;&#9646; Pause';
-  pauseBtn.style.background = '';
-  pauseBtn.style.borderColor = '';
-  pauseBtn.style.color = '';
+  pauseBtn.style.background = pauseBtn.style.borderColor = pauseBtn.style.color = '';
+  // Clear realtime state
+  isRealtime = false;
+  realtimeBtn.classList.remove('active-rt');
+  realtimeBtn.innerHTML = '&#128336; Real Time';
+  speedSlider.disabled = false; speedSlider.style.opacity = '1';
+  const v = +speedSlider.value;
+  speedValEl.textContent = v === 1 ? '1 day / frame' : `${v} days / frame`;
+  // Clear trails
   for (const obj of Object.values(planetObjects)) {
     obj.trailPoints = [];
     obj.trailLine.geometry.setFromPoints([]);
